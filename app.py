@@ -323,7 +323,7 @@ def roboflow_webhook():
             new_stage = "Idle_Empty"
         else:
             new_stage = "Idle_Empty"
-            if "Seedling" in detected_classes: new_stage = "Seedling"
+            if "Seeding" in detected_classes: new_stage = "Seeding"
             if "Vegetative" in detected_classes: new_stage = "Vegetative"
             if "Flowering" in detected_classes: new_stage = "Flowering"
             if "Fruit_and_Ripening" in detected_classes: new_stage = "Fruit_and_Ripening"
@@ -351,25 +351,29 @@ def process_data():
     
     soil = data.get("soil")
     temp = data.get("temperature")
-    humi = data.get("humidity")
+    humi = data.get("humidity") 
 
-    if soil is None or temp is None or humi is None:
-        return jsonify({"error": "Missing sensor values"}), 400
+    if soil is None:
+        return jsonify({"error": "Missing 'soil'"}), 400
 
     try:
         soil = float(soil)
         temp = float(temp)
         humi = float(humi)
     except:
-        return jsonify({"error": "Invalid sensor data format"}), 400
+        return jsonify({"error": "Invalid sensor data"}), 400
 
-    print(f"\n📥 SENSOR DATA: Soil={soil}%, Temp={temp}°C, Humi={humi}%")
+    # Cho phép cảnh báo độ ẩm chạy song song
+    threading.Thread(target=check_humidity_alarm, args=(humi,)).start()
 
-    # ====== LẤY NGƯỠNG HIỆN TẠI ======
     with lock:
         recipe = current_recipe
         day_state = current_day_state
 
+    print("\n--- Soil Moisture Check ---")
+    print(f"Soil={soil}%, Temp={temp}C, Humi={humi}%")
+
+    # ====== LẤY NGƯỠNG ======
     if day_state == "DAY":
         min_humi, max_humi = recipe["humi_day"]
         min_temp, max_temp = recipe["temp_day"]
@@ -377,24 +381,22 @@ def process_data():
         min_humi, max_humi = recipe["humi_night"]
         min_temp, max_temp = recipe["temp_night"]
 
-    target_soil = recipe["target_soil"]
+    target = recipe["target_soil"]
 
     # ====== TÍNH -1 / 0 / 1 ======
-    soil_state = -1 if soil < target_soil else (1 if soil > target_soil else 0)
+    soil_state = -1 if soil < target else (1 if soil > target else 0)
     humi_state = -1 if humi < min_humi else (1 if humi > max_humi else 0)
     temp_state = -1 if temp < min_temp else (1 if temp > max_temp else 0)
 
-    print(f"📊 STATES  → soil:{soil_state}, humi:{humi_state}, temp:{temp_state}")
-
-    # ====== GỬI LÊN THINGSBOARD DƯỚI DẠNG ATTRIBUTES ======
+    # ====== GỬI 3 TRẠNG THÁI LÊN THINGSBOARD ======
     send_attributes({
         "soil_state": soil_state,
         "humi_state": humi_state,
         "temp_state": temp_state
     })
 
-    # ====== ĐIỀU KHIỂN PUMP ======
-    if target_soil == 0:
+    # ====== QUYẾT ĐỊNH BƠM ======
+    if target == 0:
         send_rpc("setPump", {"state": False})
         return jsonify({"status": "idle (pump off)"})
 
