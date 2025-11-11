@@ -293,7 +293,7 @@ def process_webhook_async(new_stage):
     print(f"[ASYNC WORKER] Xử lý xong cho stage: {new_stage}")
 
 # ==========================================================
-#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW
+#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW (Sửa về đồng bộ)
 # ==========================================================
 @app.route("/roboflow_webhook", methods=["POST"])
 def roboflow_webhook():
@@ -323,29 +323,24 @@ def roboflow_webhook():
             new_stage = "Idle_Empty"
         else:
             new_stage = "Idle_Empty"
-            
-            if "Seedling" in detected_classes: 
-                new_stage = "Seedling"
-            if "Vegetative" in detected_classes: 
-                new_stage = "Vegetative"
-            if "Flowering" in detected_classes: 
-                new_stage = "Flowering"
-            if "Fruit_and_Ripening" in detected_classes: 
-                new_stage = "Fruit_and_Ripening"
-            if "Fruiting" in detected_classes:
-                new_stage = "Fruit_and_Ripening" 
+            if "Seedling" in detected_classes: new_stage = "Seedling"
+            if "Vegetative" in detected_classes: new_stage = "Vegetative"
+            if "Flowering" in detected_classes: new_stage = "Flowering"
+            if "Fruit_and_Ripening" in detected_classes: new_stage = "Fruit_and_Ripening"
+            if "Fruiting" in detected_classes: new_stage = "Fruit_and_Ripening" 
 
     print(f"[WEBHOOK] Giai đoạn ưu tiên cuối cùng: {new_stage}")
-    print(f"[WEBHOOK] Gửi 200 OK. Yêu cầu scheduler chạy {new_stage}...")
-    scheduler.add_job(
-        process_webhook_async,
-        'date',
-        run_date=datetime.now(), # Chạy ngay
-        args=[new_stage],
-        id=f"webhook_job_{datetime.now().timestamp()}"
-    )
     
-    return jsonify({"status": "received, processing via scheduler"}), 200
+    # --- ĐÂY LÀ PHẦN SỬA ---
+    # Bỏ scheduler.add_job và process_webhook_async
+    # Gọi TRỰC TIẾP (đồng bộ).
+    # Chúng ta sẽ "bắt" Roboflow phải chờ
+    print("[WEBHOOK] Đang xử lý đồng bộ (chặn Roboflow)...")
+    json_response = update_stage_internal(new_stage)
+    
+    # Trả lời OK sau khi đã xử lý xong
+    print("[WEBHOOK] Xử lý đồng bộ XONG. Gửi 200 OK.")
+    return jsonify(json_response), 200
 
 # ==========================================================
 #  PROCESS SENSOR DATA (ĐÃ CẬP NHẬT)
