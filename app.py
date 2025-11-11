@@ -257,6 +257,7 @@ def clear_all_jobs():
 # ==========================================================
 def update_stage_internal(new_stage):
     global current_stage, current_recipe
+    global last_pump_state
 
 
     if new_stage not in PLANT_RECIPES:
@@ -271,7 +272,6 @@ def update_stage_internal(new_stage):
         current_stage = new_stage
         current_recipe = PLANT_RECIPES[current_stage]
 
-        global last_pump_state
         last_pump_state = None  # Reset so pump logic bắt đầu lại đúng
 
         
