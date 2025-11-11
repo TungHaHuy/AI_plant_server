@@ -235,7 +235,7 @@ def process_webhook_async(new_stage):
     print(f"[ASYNC WORKER] Xử lý xong cho stage: {new_stage}")
 
 # ==========================================================
-#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW (ĐÃ SỬA LẠI)
+#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW (ĐÃ SỬA LOGIC ƯU TIÊN)
 # ==========================================================
 @app.route("/roboflow_webhook", methods=["POST"])
 def roboflow_webhook():
@@ -253,46 +253,52 @@ def roboflow_webhook():
         print("No predictions list. Setting to Idle.")
         new_stage = "Idle_Empty"
     else:
-        best_prediction_class = "Idle_Empty"
-        max_confidence = 0.0
+        # --- LOGIC MỚI: TÌM TẤT CẢ, SAU ĐÓ ƯU TIÊN ---
         
+        # 1. Lấy TẤT CẢ các class có confidence > 0.4
+        detected_classes = set()
         for p in predictions_list:
-            conf = p.get("confidence", 0)
-            if conf > max_confidence:
-                max_confidence = conf
-                best_prediction_class = p.get("class", "Idle_Empty")
-
-        if max_confidence < 0.4:
-            print(f"Confidence below 40% ({max_confidence}). Setting to Idle.")
-            best_prediction_class = "Idle_Empty"
-
-        print(f"Best detection: {best_prediction_class} (Conf: {max_confidence})")
+            if p.get("confidence", 0) > 0.4:
+                detected_classes.add(p.get("class", ""))
         
-        new_stage = "Idle_Empty"
-        
-        if best_prediction_class in PLANT_RECIPES:
-            new_stage = best_prediction_class
+        print(f"Tất cả class (conf > 0.4): {detected_classes}")
+
+        if not detected_classes:
+            print("Tất cả detection đều < 40% confidence. Về Idle.")
+            new_stage = "Idle_Empty"
         else:
-            if "Seedling" in best_prediction_class: new_stage = "Seedling"
-            elif "Vegetative" in best_prediction_class: new_stage = "Vegetative"
-            elif "Flowering" in best_prediction_class: new_stage = "Flowering"
-            elif "Fruit_and_Ripening" in best_prediction_class: new_stage = "Fruit_and_Ripening"
-            elif "Fruiting" in best_prediction_class: new_stage = "Fruit_and_Ripening"
+            # 2. Áp dụng logic ưu tiên cho TẤT CẢ class đã tìm thấy
+            # Logic này sẽ đảm bảo giai đoạn sau đè lên giai đoạn trước
+            new_stage = "Idle_Empty"
+            
+            if "Seedling" in detected_classes: 
+                new_stage = "Seedling"
+            if "Vegetative" in detected_classes: 
+                new_stage = "Vegetative"
+            if "Flowering" in detected_classes: 
+                new_stage = "Flowering"
+            if "Fruit_and_Ripening" in detected_classes: 
+                new_stage = "Fruit_and_Ripening"
+            if "Fruiting" in detected_classes: # Thêm 1 tên alias cho chắc
+                new_stage = "Fruit_and_Ripening" 
+            
+            # (Nếu trong set có cả "Vegetative" và "Flowering",
+            # new_stage sẽ bị ghi đè thành "Flowering" -> CHUẨN)
 
-    # --- ĐÂY LÀ PHẦN SỬA ---
-    # Bỏ threading.Thread
-    # Thay bằng cách "nhờ" scheduler chạy việc này NGAY LẬP TỨC
-    # (run_date=datetime.now() nghĩa là "chạy ngay")
+    # --- HẾT LOGIC MỚI ---
+
+    # Phần gọi scheduler vẫn giữ nguyên
+    print(f"[WEBHOOK] Giai đoạn ưu tiên cuối cùng: {new_stage}")
     print(f"[WEBHOOK] Gửi 200 OK. Yêu cầu scheduler chạy {new_stage}...")
     scheduler.add_job(
         process_webhook_async,
         'date',
-        run_date=datetime.now(), # <-- Chạy ngay
+        run_date=datetime.now(), # Chạy ngay
         args=[new_stage],
         id=f"webhook_job_{datetime.now().timestamp()}" # ID duy nhất
     )
     
-    # Trả lời "OK" ngay lập lức
+    # Trả lời "OK" ngay lập tức
     return jsonify({"status": "received, processing via scheduler"}), 200
 
 # ==========================================================
