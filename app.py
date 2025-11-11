@@ -214,7 +214,8 @@ def go_to_night(is_idle=False, start_hour=None):
     else:
         print(f"\n--- 🌙 PLANT NIGHTTIME (Start Hour: {start_hour}) ---")
         current_day_state = "NIGHT"
-
+        
+    send_rpc("setPump", {"state": False})
     send_rpc("setLedPower", {"state": False}) # Tắt đèn
 
     min_temp_n, max_temp_n = recipe["temp_night"]
