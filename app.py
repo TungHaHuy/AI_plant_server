@@ -235,7 +235,7 @@ def process_webhook_async(new_stage):
     print(f"[ASYNC WORKER] Xử lý xong cho stage: {new_stage}")
 
 # ==========================================================
-#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW (ĐÃ THAY THẾ)
+#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW (ĐÃ SỬA LẠI)
 # ==========================================================
 @app.route("/roboflow_webhook", methods=["POST"])
 def roboflow_webhook():
@@ -279,16 +279,21 @@ def roboflow_webhook():
             elif "Fruit_and_Ripening" in best_prediction_class: new_stage = "Fruit_and_Ripening"
             elif "Fruiting" in best_prediction_class: new_stage = "Fruit_and_Ripening"
 
-    # --- SỬA LOGIC: CHẠY TRONG THREAD MỚI ---
-    worker_thread = threading.Thread(
-        target=process_webhook_async,
-        args=(new_stage,)
+    # --- ĐÂY LÀ PHẦN SỬA ---
+    # Bỏ threading.Thread
+    # Thay bằng cách "nhờ" scheduler chạy việc này NGAY LẬP TỨC
+    # (run_date=datetime.now() nghĩa là "chạy ngay")
+    print(f"[WEBHOOK] Gửi 200 OK. Yêu cầu scheduler chạy {new_stage}...")
+    scheduler.add_job(
+        process_webhook_async,
+        'date',
+        run_date=datetime.now(), # <-- Chạy ngay
+        args=[new_stage],
+        id=f"webhook_job_{datetime.now().timestamp()}" # ID duy nhất
     )
-    worker_thread.start()
     
-    # Trả lời "OK" ngay lập tức cho Roboflow
-    print("[WEBHOOK] Gửi 200 OK cho Roboflow. Xử lý trong nền...")
-    return jsonify({"status": "received, processing in background"}), 200
+    # Trả lời "OK" ngay lập lức
+    return jsonify({"status": "received, processing via scheduler"}), 200
 
 # ==========================================================
 #  PROCESS SENSOR DATA (ĐÃ CẬP NHẬT)
