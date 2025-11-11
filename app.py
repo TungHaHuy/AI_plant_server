@@ -13,6 +13,7 @@ TB_API = "https://thingsboard.cloud"
 
 # ID thiết bị (UUID) lấy trong ThingsBoard → Devices → chọn thiết bị → Details
 DEVICE_ID = "6cc4a260-bbeb-11f0-8f6e-0181075d8a82"    # <--- SỬA
+DEVICE_TOKEN = "fNsd0L35ywAKakJ979b2"
 
 # JWT Token dài (bạn đã lấy từ API / DevTools)
 TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiIxNjg4NTExOC1hMGE3LTRmYzktOTcwNS1mMGJjM2NjMWQ3YmEiLCJleHAiOjE3NjI4NTQyODYsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYyODI1NDg2LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Ahr9rBZdkFQx7O98WS6WFMObMDxIw0NWfLC9cxUdph2eTphHajAe_6m34JjmaLSFoix3eNkDDgG1RViUmRYduw"
@@ -82,13 +83,12 @@ def send_rpc(method, params):
 #  HÀM GỬI ATTRIBUTES (Gửi Ngưỡng)
 # ==========================================================
 def send_attributes(payload):
-    url = f"{TB_API}/api/plugins/telemetry/DEVICE/{DEVICE_ID}/attributes/SHARED_SCOPE"
-    headers = {"X-Authorization": f"Bearer {TB_JWT_TOKEN}"}
+    url = f"{TB_API}/api/v1/{DEVICE_TOKEN}/attributes"
     try:
-        r = requests.post(url, json=payload, headers=headers, timeout=3)
-        print(f"[REST ATTR] {payload} -> {r.status_code}")
+        r = requests.post(url, json=payload, timeout=3)
+        print(f"[ATTR] {payload} -> {r.status_code}")
     except Exception as e:
-        print(f"[REST ATTR ERROR] {payload} -> {e}")
+        print(f"[ATTR ERROR] {payload} -> {e}")
 
 # ==========================================================
 #  HÀM TẠO/XÓA ALARM (ĐÃ THÊM)
@@ -351,40 +351,60 @@ def process_data():
     
     soil = data.get("soil")
     temp = data.get("temperature")
-    humi = data.get("humidity") 
+    humi = data.get("humidity")
 
-    if soil is None:
-        return jsonify({"error": "Missing 'soil'"}), 400
+    if soil is None or temp is None or humi is None:
+        return jsonify({"error": "Missing sensor values"}), 400
 
     try:
-        soil_float = float(soil)
-    except (ValueError, TypeError):
-        return jsonify({"error": f"Invalid 'soil' value: {soil}"}), 400
+        soil = float(soil)
+        temp = float(temp)
+        humi = float(humi)
+    except:
+        return jsonify({"error": "Invalid sensor data format"}), 400
 
-    # --- PHẦN MỚI: GỌI HÀM CHECK CẢNH BÁO ---
-    threading.Thread(target=check_humidity_alarm, args=(humi,)).start()
-    # --- HẾT PHẦN MỚI ---
+    print(f"\n📥 SENSOR DATA: Soil={soil}%, Temp={temp}°C, Humi={humi}%")
 
+    # ====== LẤY NGƯỠNG HIỆN TẠI ======
     with lock:
-        target = current_recipe["target_soil"]
+        recipe = current_recipe
+        day_state = current_day_state
 
-    print("\n--- Soil Moisture Check ---")
-    print(f"Sensor data: Soil={soil}%, Temp={temp}C, Humi={humi}%")
-    print(f"Target soil moisture:  {target}%")
-
-    if target == 0:
-        print("Decision: Idle stage -> Pump OFF.")
-        send_rpc("setPump", {"state": False})
-        return jsonify({"status": "idle stage (pump off)"})
-
-    if soil_float >= target:
-        print("Decision: Soil moisture is sufficient -> Pump OFF.")
-        send_rpc("setPump", {"state": False})
-        return jsonify({"status": "pump off"})
+    if day_state == "DAY":
+        min_humi, max_humi = recipe["humi_day"]
+        min_temp, max_temp = recipe["temp_day"]
     else:
-        print("Decision: Soil moisture is too low -> Pump ON.")
+        min_humi, max_humi = recipe["humi_night"]
+        min_temp, max_temp = recipe["temp_night"]
+
+    target_soil = recipe["target_soil"]
+
+    # ====== TÍNH -1 / 0 / 1 ======
+    soil_state = -1 if soil < target_soil else (1 if soil > target_soil else 0)
+    humi_state = -1 if humi < min_humi else (1 if humi > max_humi else 0)
+    temp_state = -1 if temp < min_temp else (1 if temp > max_temp else 0)
+
+    print(f"📊 STATES  → soil:{soil_state}, humi:{humi_state}, temp:{temp_state}")
+
+    # ====== GỬI LÊN THINGSBOARD DƯỚI DẠNG ATTRIBUTES ======
+    send_attributes({
+        "soil_state": soil_state,
+        "humi_state": humi_state,
+        "temp_state": temp_state
+    })
+
+    # ====== ĐIỀU KHIỂN PUMP ======
+    if target_soil == 0:
+        send_rpc("setPump", {"state": False})
+        return jsonify({"status": "idle (pump off)"})
+
+    if soil_state == -1:
         send_rpc("setPump", {"state": True})
         return jsonify({"status": "pump on"})
+    else:
+        send_rpc("setPump", {"state": False})
+        return jsonify({"status": "pump off"})
+
 
 # ==========================================================
 #  API SET GIỜ THỦ CÔNG
