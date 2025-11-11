@@ -18,6 +18,7 @@ DEVICE_TOKEN = "fNsd0L35ywAKakJ979b2"
 # JWT Token dài (bạn đã lấy từ API / DevTools)
 TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiIxNjg4NTExOC1hMGE3LTRmYzktOTcwNS1mMGJjM2NjMWQ3YmEiLCJleHAiOjE3NjI4NTQyODYsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYyODI1NDg2LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Ahr9rBZdkFQx7O98WS6WFMObMDxIw0NWfLC9cxUdph2eTphHajAe_6m34JjmaLSFoix3eNkDDgG1RViUmRYduw"
 
+last_pump_state = None   # None / True / False
 # ==========================================================
 #  CÁC CÔNG THỨC TRỒNG CÂY
 # ==========================================================
@@ -401,12 +402,19 @@ def process_data():
         send_rpc("setPump", {"state": False})
         return jsonify({"status": "idle (pump off)"})
 
-    if soil_state == -1:
-        send_rpc("setPump", {"state": True})
-        return jsonify({"status": "pump on"})
+    global last_pump_state
+    
+    desired_state = (soil_state == -1)  # True = ON, False = OFF
+    
+    if last_pump_state != desired_state:
+        print(f"[PUMP] State changed → sending RPC: {desired_state}")
+        send_rpc("setPump", {"state": desired_state})
+        last_pump_state = desired_state
     else:
-        send_rpc("setPump", {"state": False})
-        return jsonify({"status": "pump off"})
+        print(f"[PUMP] State unchanged ({desired_state}) → no RPC sent")
+    
+    return jsonify({"status": "pump on" if desired_state else "pump off"})
+
 
 
 # ==========================================================
