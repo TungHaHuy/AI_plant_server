@@ -258,6 +258,7 @@ def clear_all_jobs():
 def update_stage_internal(new_stage):
     global current_stage, current_recipe
 
+
     if new_stage not in PLANT_RECIPES:
         print(f"Lỗi: Không tìm thấy stage '{new_stage}' trong PLANT_RECIPES.")
         return {"error": f"Stage '{new_stage}' not found"}
@@ -269,6 +270,10 @@ def update_stage_internal(new_stage):
         print(f"\n--- STAGE CHANGED: {current_stage} → {new_stage} ---")
         current_stage = new_stage
         current_recipe = PLANT_RECIPES[current_stage]
+
+        global last_pump_state
+        last_pump_state = None  # Reset so pump logic bắt đầu lại đúng
+
         
         clear_all_jobs()
 
@@ -399,7 +404,16 @@ def process_data():
 
     # ====== QUYẾT ĐỊNH BƠM ======
     if target == 0:
-        send_rpc("setPump", {"state": False})
+        global last_pump_state
+        desired_state = False
+    
+        if last_pump_state != desired_state:
+            print(f"[PUMP] Idle mode → state changed → sending RPC: {desired_state}")
+            send_rpc("setPump", {"state": desired_state})
+            last_pump_state = desired_state
+        else:
+            print(f"[PUMP] Idle mode → state unchanged ({desired_state}) → no RPC sent")
+    
         return jsonify({"status": "idle (pump off)"})
 
     global last_pump_state
