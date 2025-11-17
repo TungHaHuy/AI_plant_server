@@ -102,31 +102,34 @@ def sync_clock_state():
             go_to_night(is_idle=False, start_hour=current_hour)
 
 # ==========================================================
-#  API: SET MANUAL MODE (*** HÀM MỚI THAY THẾ ***)
+#  API: SET MANUAL MODE (*** HÀM ĐÃ SỬA LỖI BOOL("false") ***)
 # ==========================================================
 @app.route("/set_manual_mode", methods=["POST"])
 def set_manual_mode_api():
     global is_manual_mode
     data = request.json
     
-    # Dữ liệu từ Rule Chain (bước 3) sẽ có dạng:
-    # {"method": "setManualMode", "params": true/false}
-    new_mode = data.get("params") 
+    # Dữ liệu 100% là string "true" hoặc string "false"
+    # (Dựa trên log của bạn, không phải giao diện)
+    
+    # Lấy param, đổi nó sang string, và viết thường
+    new_mode_str = str(data.get("params")).lower() # Chuyển "False" -> "false"
 
-    if new_mode is None:
-        print("[MODE API] Lỗi: không thấy 'params' trong request")
-        return jsonify({"error": "Missing 'params'"}), 400
+    if new_mode_str not in ["true", "false"]:
+        print(f"[MODE API] Lỗi: 'params' không phải 'true'/'false', mà là: {new_mode_str}")
+        return jsonify({"error": "Invalid params"}), 400
 
-    new_mode_bool = bool(new_mode)
+    # *** DÒNG SỬA LỖI LÀ ĐÂY ***
+    # So sánh string "true" thay vì ép kiểu bool()
+    new_mode_bool = (new_mode_str == "true") 
     
     # Chỉ xử lý nếu có thay đổi
     if new_mode_bool != is_manual_mode:
         print(f"\n--- ⚙️ MODE SET VIA API: {new_mode_bool} ---")
         is_manual_mode = new_mode_bool
         
-        # Nếu vừa TẮT manual (chuyển sang False), ta cần khôi phục đồng hồ
+        # Nếu vừa TẮT manual (chuyển sang False)
         if is_manual_mode == False:
-            # Chạy trong thread riêng để không "block" (chặn) ThingsBoard
             threading.Thread(target=sync_clock_state, daemon=True).start()
 
     return jsonify({"status": "ok", "manual_mode": is_manual_mode}), 200
