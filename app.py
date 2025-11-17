@@ -5,6 +5,8 @@ import atexit
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 import os # <-- Đã có cho Render
+import base64 # Thêm ở đầu file
+import requests # Thêm ở đầu file
 
 # ==========================================================
 #  CONFIG (SỬA Ở ĐÂY)
@@ -14,6 +16,8 @@ TB_API = "https://thingsboard.cloud"
 # ID thiết bị (UUID) lấy trong ThingsBoard → Devices → chọn thiết bị → Details
 DEVICE_ID = "6cc4a260-bbeb-11f0-8f6e-0181075d8a82"    # <--- SỬA
 DEVICE_TOKEN = "fNsd0L35ywAKakJ979b2"
+ROBOFLOW_API_URL = "https://serverless.roboflow.com/tunghahuy/workflows/custom-workflow"
+ROBOFLOW_API_KEY = "YY5sAfysi1GpnWgkVPfF"
 
 # JWT Token dài (bạn đã lấy từ API / DevTools)
 TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiIxNjg4NTExOC1hMGE3LTRmYzktOTcwNS1mMGJjM2NjMWQ3YmEiLCJleHAiOjE3NjI4NTQyODYsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYyODI1NDg2LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Ahr9rBZdkFQx7O98WS6WFMObMDxIw0NWfLC9cxUdph2eTphHajAe_6m34JjmaLSFoix3eNkDDgG1RViUmRYduw"
@@ -348,6 +352,79 @@ def roboflow_webhook():
     # Trả lời OK sau khi đã xử lý xong
     print("[WEBHOOK] Xử lý đồng bộ XONG. Gửi 200 OK.")
     return jsonify(json_response), 200
+
+# ==========================================================
+#  ENDPOINT MỚI: NHẬN ẢNH TỪ THINGSBOARD -> GỬI TỚI ROBOFLOW
+# ==========================================================
+@app.route("/process_photo_from_thingsboard", methods=["POST"])
+def process_photo_from_thingsboard():
+    data = request.json
+    if not data:
+        print("[PROCESS PHOTO] Lỗi: Không nhận được payload.")
+        return jsonify({"status": "error", "message": "Missing payload"}), 400
+
+    # Lấy chuỗi Base64. 
+    # Tùy thuộc vào Rule Node của bạn, nó có thể nằm trong `data['photo']`
+    # hoặc `data['msg']['photo']` hoặc `data['values']['photo']`
+    # Chúng ta sẽ thử tìm 'photo' ở cấp cao nhất
+    
+    b64_image = data.get("photo")
+    
+    # Nếu không tìm thấy, thử tìm trong các cấu trúc phổ biến của ThingsBoard
+    if not b64_image and "msg" in data and isinstance(data["msg"], dict):
+        b64_image = data["msg"].get("photo")
+        
+    if not b64_image and "values" in data and isinstance(data["values"], dict):
+        b64_image = data["values"].get("photo")
+
+    if not b64_image:
+        print(f"[PROCESS PHOTO] Lỗi: Không tìm thấy key 'photo' trong payload. Dữ liệu nhận được: {data}")
+        return jsonify({"status": "error", "message": "Missing 'photo' key in payload"}), 400
+
+    # Roboflow muốn Base64 "thô" (raw), không có tiền tố data URI
+    # Code này sẽ loại bỏ "data:image/jpeg;base64," nếu có
+    if b64_image.startswith("data:image"):
+        b64_image = b64_image.split(',')[-1]
+        print("[PROCESS PHOTO] Đã loại bỏ tiền tố data URI.")
+
+    # === Xây dựng payload JSON cho Roboflow ===
+    roboflow_payload = {
+        "api_key": ROBOFLOW_API_KEY,
+        "inputs": {
+            # Sử dụng "type": "base64"
+            "image": {
+                "type": "base64",
+                "value": b64_image
+            }
+        }
+    }
+
+    # === Gửi ảnh (dưới dạng JSON) đến Roboflow Workflow API ===
+    try:
+        print(f"[PROCESS PHOTO] Đang gửi ảnh (Base64) tới Roboflow Workflow...")
+        
+        roboflow_response = requests.post(
+            ROBOFLOW_API_URL,
+            json=roboflow_payload, # Gửi dưới dạng JSON
+            headers={"Content-Type": "application/json"},
+            timeout=20 # Tăng timeout vì ảnh base64 có thể lớn
+        )
+        
+        roboflow_response.raise_for_status() # Ném exception cho các lỗi HTTP (4xx, 5xx)
+        
+        print(f"[PROCESS PHOTO] Roboflow phản hồi: {roboflow_response.status_code}")
+        # print(f"[PROCESS PHOTO] Response body: {roboflow_response.text}") # Bỏ comment nếu cần debug
+
+        # Roboflow sẽ tự động gọi webhook /roboflow_webhook sau khi xử lý xong
+        # Chúng ta chỉ cần trả lời OK cho ThingsBoard
+        return jsonify({"status": "ok", "message": "Image sent to Roboflow"}), 200
+
+    except requests.exceptions.RequestException as e:
+        print(f"[PROCESS PHOTO] Lỗi khi gửi ảnh tới Roboflow: {e}")
+        return jsonify({"status": "error", "message": f"Failed to send image to Roboflow: {e}"}), 500
+    except Exception as e:
+        print(f"[PROCESS PHOTO] Lỗi không xác định: {e}")
+        return jsonify({"status": "error", "message": f"An unexpected error occurred: {e}"}), 500
 
 # ==========================================================
 #  PROCESS SENSOR DATA (ĐÃ CẬP NHẬT)
