@@ -49,7 +49,7 @@ current_stage = "Idle_Empty"
 current_recipe = PLANT_RECIPES[current_stage]
 current_day_state = "IDLE"
 
-lock = threading.Lock() # <<< ĐÃ THÊM LOCK
+lock = threading.RLock() # <<< ĐÃ THÊM LOCK
 scheduler = BackgroundScheduler(daemon=True)
 app = Flask(__name__)
 
