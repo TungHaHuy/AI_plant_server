@@ -4,9 +4,9 @@ import threading
 import atexit
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
-import os # <-- Đã có cho Render
-import base64 # Thêm ở đầu file
-import requests # Thêm ở đầu file
+import os 
+import base64 
+import requests 
 
 # ==========================================================
 #  CONFIG (SỬA Ở ĐÂY)
@@ -21,7 +21,7 @@ ROBOFLOW_API_KEY = "YY5sAfysi1GpnWgkVPfF"
 
 
 # JWT Token dài (bạn đã lấy từ API / DevTools)
-TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiIxNjg4NTExOC1hMGE3LTRmYzktOTcwNS1mMGJjM2NjMWQ3YmEiLCJleHAiOjE3NjI4NTQyODYsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYyODI1NDg2LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Ahr9rBZdkFQx7O98WS6WFMObMDxIw0NWfLC9cxUdph2eTphHajAe_6m34JjmaLSFoix3eNkDDgG1RViUmRYduw"
+TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiIxNjg4NTExOC1hMGE3LTRmYzktOTcwNS1mMGJjM2NjMWQ3YmEiLCJleHAiOjE3NjI4NTQyODYsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYyODI1NDg2LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Ahr9rBZdkFQx7O98WS6WFMObMDxIw0NWfLC9cxUdph2eTphHajAe_6m34JjmaLSFoix3eNkDDGgG1RViUmRYduw"
 
 last_pump_state = None    # None / True / False
 # ==========================================================
@@ -175,10 +175,10 @@ def check_humidity_alarm(current_humi):
         clear_alarm(alarm_type)
 
 # ==========================================================
-#  LOGIC "ĐỒNG HỒ SINH HỌC" (SỬA LẠI VỚI MANUAL MODE)
+#  LOGIC "ĐỒNG HỒ SINH HỌC" (ĐÃ SỬA CHÍNH XÁC)
 # ==========================================================
 def go_to_day(start_hour=0):
-    global current_recipe, current_day_state, is_manual_mode # Thêm is_manual_mode
+    global current_recipe, current_day_state, is_manual_mode 
     
     if current_stage == "Idle_Empty":
         print("[CLOCK] Bỏ qua go_to_day() vì đang Idle.")
@@ -188,19 +188,19 @@ def go_to_day(start_hour=0):
     current_day_state = "DAY"
     recipe = current_recipe 
 
-    # --- SỬA LẠI CỔNG CHẶN: CHỈ CHẶN RPC ---
+    # --- CỔNG CHẶN RPC (CHỈ CHẶN GỬI LỆNH) ---
     with lock:
         if is_manual_mode:
-            print("[CLOCK] Đang ở Manual Mode, bỏ qua gửi lệnh RPC.")
+            print("[CLOCK] Đang ở Manual Mode, **bỏ qua gửi lệnh RPC đèn**.")
         else:
             # Chỉ gửi lệnh nếu KHÔNG ở Manual Mode
             print("[CLOCK] Gửi lệnh RPC cho ban ngày...")
             r, g, b = recipe["rgb_color"]
             brightness = recipe["brightness"]
-            send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b}) # Sửa key nếu cần
+            send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b}) 
             send_rpc("setBrightness", {"brightness": brightness})
 
-        # LUÔN GỬI ATTRIBUTES (để UI đồng bộ)
+        # LUÔN GỬI ATTRIBUTES (để UI đồng bộ, đây không phải RPC điều khiển)
         min_temp_d, max_temp_d = recipe["temp_day"]
         min_humi_d, max_humi_d = recipe["humi_day"]
         attributes_payload = {
@@ -209,10 +209,10 @@ def go_to_day(start_hour=0):
             "day_cycle": "DAY"
         }
         send_attributes(attributes_payload)
-    # --- KẾT THÚC SỬA ---
+    # --- KẾT THÚC CỔNG CHẶN RPC ---
 
     light_hours = recipe.get("light_hours", 12)
-    remaining_hours = light_hours - start_hour
+    remaining_hours = light_hours - hour
     if remaining_hours <= 0: remaining_hours = 0.01
 
     # LỊCH HẸN VẪN PHẢI CHẠY (Giữ nguyên đồng hồ)
@@ -222,11 +222,12 @@ def go_to_day(start_hour=0):
     except: pass
     
     run_time = datetime.now() + timedelta(hours=remaining_hours)
-    scheduler.add_job(go_to_night, 'date', run_date=run_time, id='night_job')
+    # CHẠY LẠI CHÍNH XÁC LÚC run_time ĐỂ ĐẶT LẠI LỊCH (ĐỒNG HỒ SINH HỌC VẪN PHẢI CHẠY)
+    scheduler.add_job(go_to_night, 'date', run_date=run_time, id='night_job') 
     print(f"[CLOCK] Đã lên lịch TẮT ĐÈN sau {remaining_hours:.1f} giờ (lúc {run_time.strftime('%H:%M')})")
 
 def go_to_night(is_idle=False, start_hour=None):
-    global current_recipe, current_day_state, is_manual_mode # Thêm is_manual_mode
+    global current_recipe, current_day_state, is_manual_mode 
     
     recipe = current_recipe 
     
@@ -237,14 +238,14 @@ def go_to_night(is_idle=False, start_hour=None):
         print(f"\n--- 🌙 PLANT NIGHTTIME (Start Hour: {start_hour}) ---")
         current_day_state = "NIGHT"
         
-    # --- SỬA LẠI CỔNG CHẶN: CHỈ CHẶN RPC ---
+    # --- CỔNG CHẶN RPC (CHỈ CHẶN GỬI LỆNH) ---
     with lock:
         if is_manual_mode:
-            print("[CLOCK] Đang ở Manual Mode, bỏ qua gửi lệnh RPC.")
+            print("[CLOCK] Đang ở Manual Mode, **bỏ qua gửi lệnh RPC đèn/bơm**.")
         else:
             # Chỉ gửi lệnh nếu KHÔNG ở Manual Mode
             print("[CLOCK] Gửi lệnh RPC cho ban đêm...")
-            send_rpc("setPump", {"state": False})
+            send_rpc("setPump", {"state": False}) # Tắt bơm
             send_rpc("setLedPower", {"state": False}) # Tắt đèn
 
         # LUÔN GỬI ATTRIBUTES (để UI đồng bộ)
@@ -256,7 +257,7 @@ def go_to_night(is_idle=False, start_hour=None):
             "day_cycle": "NIGHT" if not is_idle else "IDLE"
         }
         send_attributes(attributes_payload)
-    # --- KẾT THÚC SỬA ---
+    # --- KẾT THÚC CỔNG CHẶN RPC ---
 
     if not is_idle:
         light_hours = recipe.get("light_hours", 12)
@@ -275,6 +276,7 @@ def go_to_night(is_idle=False, start_hour=None):
         except: pass
 
         run_time = datetime.now() + timedelta(hours=remaining_hours)
+        # CHẠY LẠI CHÍNH XÁC LÚC run_time ĐỂ ĐẶT LẠI LỊCH (ĐỒNG HỒ SINH HỌC VẪN PHẢI CHẠY)
         scheduler.add_job(go_to_day, 'date', run_date=run_time, id='day_job')
         print(f"[CLOCK] Đã lên lịch BẬT ĐÈN sau {remaining_hours:.1f} giờ (lúc {run_time.strftime('%H:%M')})")
 
@@ -289,7 +291,7 @@ def clear_all_jobs():
         print(f"[CLOCK ERROR] Lỗi khi xóa job: {e}")
 
 # ==========================================================
-#  CẬP NHẬT GIAI ĐOẠN PHÁT TRIỂN
+#  CẬP NHẬT GIAI ĐOẠN PHÁT TRIỂN (VẪN CHẠY)
 # ==========================================================
 def update_stage_internal(new_stage):
     global current_stage, current_recipe
@@ -313,7 +315,8 @@ def update_stage_internal(new_stage):
         if new_stage == "Idle_Empty":
             go_to_night(is_idle=True)
         else:
-            go_to_day(start_hour=0)
+            # AI thay đổi stage -> Bắt đầu lại chu kỳ từ Day (start_hour=0)
+            go_to_day(start_hour=0) 
 
     return {"status": "ok", "stage": current_stage}
 
@@ -325,23 +328,16 @@ def home():
     return f"✅ AI Plant Server is running — Current stage: {current_stage} ({current_day_state}) — Manual: {is_manual_mode}"
 
 # ==========================================================
-#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW (Sửa về đồng bộ)
+#  WEBHOOK NHẬN KẾT QUẢ TỪ ROBOFLOW (VẪN CHẠY)
 # ==========================================================
 @app.route("/roboflow_webhook", methods=["POST"])
 def roboflow_webhook():
-
-    # global is_manual_mode # <-- XÓA CỔNG CHẶN
-    # with lock:
-    #     if is_manual_mode:
-    #         print("[WEBHOOK] Bỏ qua kết quả AI (Manual Mode)")
-    #         return jsonify({"status": "skipped", "reason": "manual mode"})
     
+    # *** ĐÃ XÓA CỔNG CHẶN MANUAL MODE Ở ĐÂY ***
+    # Cho phép Roboflow luôn chạy và cập nhật stage/công thức
+
     data = request.json
     print("\n--- Received Roboflow Webhook ---")
-
-    # --- SỬA LOGIC MANUAL MODE ---
-    # CHỈ KIỂM TRA SAU KHI CÓ KẾT QUẢ, TRƯỚC KHI UPDATE
-    # (Để webhook không bị lỗi)
 
     predictions_list = []
     if "predictions" in data:
@@ -374,32 +370,21 @@ def roboflow_webhook():
 
     print(f"[WEBHOOK] Giai đoạn ưu tiên cuối cùng: {new_stage}")
 
-    # --- SỬA: THÊM CỔNG CHẶN Ở ĐÂY ---
-    with lock:
-        if is_manual_mode:
-            print("[WEBHOOK] Đang ở Manual Mode. Sẽ không cập nhật stage.")
-            return jsonify({"status": "skipped", "reason": "manual mode"})
-    # --- KẾT THÚC SỬA ---
-
     print("[WEBHOOK] Đang xử lý đồng bộ (chặn Roboflow)...")
-    json_response = update_stage_internal(new_stage)
+    # Luôn gọi hàm update_stage_internal
+    json_response = update_stage_internal(new_stage) 
     
     print("[WEBHOOK] Xử lý đồng bộ XONG. Gửi 200 OK.")
     return jsonify(json_response), 200
 
 # ==========================================================
-#  ENDPOINT MỚI: NHẬN ẢNH TỪ THINGSBOARD -> GỬI TỚI ROBOFLOW
+#  ENDPOINT MỚI: NHẬN ẢNH TỪ THINGSBOARD -> GỬI TỚI ROBOFLOW (VẪN CHẠY)
 # ==========================================================
 @app.route("/process_photo_from_thingsboard", methods=["POST"])
 def process_photo_from_thingsboard():     
-    # global is_manual_mode # <-- XÓA CỔNG CHẶN
-    # with lock:
-    #     if is_manual_mode:
-    #         print("[PROCESS PHOTO] Bỏ qua (Manual Mode)")
-    #         return jsonify({"status": "skipped", "reason": "manual mode"})
-            
-    # HÀM NÀY GIỮ NGUYÊN, CHO PHÉP NÓ CHẠY
-    
+    # *** ĐÃ XÓA CỔNG CHẶN MANUAL MODE Ở ĐÂY ***
+    # Cho phép chụp ảnh và gửi đi luôn chạy.
+
     data = request.json      
     if not data:
         print("[PROCESS PHOTO] Lỗi: Không nhận được payload.")
@@ -454,17 +439,14 @@ def process_photo_from_thingsboard():
         return jsonify({"status": "error", "message": f"An unexpected error occurred: {e}"}), 500
 
 # ==========================================================
-#  PROCESS SENSOR DATA (ĐÃ CẬP NHẬT)
+#  PROCESS SENSOR DATA (ĐÃ SỬA CHÍNH XÁC)
 # ==========================================================
 @app.route("/process_data", methods=["POST"])
 def process_data():
     global last_pump_state,is_manual_mode  
 
-    # --- XÓA CỔNG CHẶN Ở ĐÂY ---
-    # with lock:
-    #     if is_manual_mode:
-    #         print("[PROCESS DATA] Bỏ qua (Manual Mode)")
-    #         return jsonify({"status": "skipped", "reason": "manual mode"})
+    # *** ĐÃ XÓA CỔNG CHẶN MANUAL MODE Ở ĐÂY ***
+    # Cho phép logic xử lý sensor và cảnh báo (check_humidity_alarm) luôn chạy.
 
     data = request.json
     
@@ -514,13 +496,13 @@ def process_data():
         "temp_state": temp_state
     })
 
-    # ====== QUYẾT ĐỊNH BƠM (THÊM CỔNG CHẶN Ở ĐÂY) ======
+    # ====== QUYẾT ĐỊNH BƠM (CÓ CỔNG CHẶN Ở ĐÂY) ======
     with lock:
         if is_manual_mode:
-            print("[PUMP] Đang ở Manual Mode, bỏ qua gửi lệnh RPC.")
+            print("[PUMP] Đang ở Manual Mode, **bỏ qua gửi lệnh RPC bơm**.")
             return jsonify({"status": "skipped", "reason": "manual mode"})
 
-    # Chỉ chạy logic bơm nếu KHÔNG ở manual mode
+    # Chỉ chạy logic bơm nếu KHÔNG ở manual mode (Logic này được kích hoạt)
     if target == 0:
         desired_state = False
     
@@ -545,17 +527,13 @@ def process_data():
     
     return jsonify({"status": "pump on" if desired_state else "pump off"})
 # ==========================================================
-#  API SET GIỜ THỦ CÔNG
+#  API SET GIỜ THỦ CÔNG (VẪN CHẠY)
 # ==========================================================
 @app.route("/set_manual_time", methods=["POST"])
 def set_manual_time():
-    # global is_manual_mode # <-- XÓA CỔNG CHẶN
-    # with lock:
-    #     if is_manual_mode:
-    #         print("[MANUAL TIME] Bỏ qua (Manual Mode)")
-    #         return jsonify({"status": "skipped", "reason": "manual mode"})
     
-    # HÀM NÀY GIỮ NGUYÊN, CHO PHÉP NÓ CHẠY
+    # *** ĐÃ XÓA CỔNG CHẶN MANUAL MODE Ở ĐÂY ***
+    # Cho phép set giờ thủ công luôn chạy để đặt lại đồng hồ sinh học.
     
     data = request.json
     hour = data.get("hour") # Lấy giờ (0-23)
@@ -570,11 +548,9 @@ def set_manual_time():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
-    # --- SỬA: THÊM CỔNG CHẶN Ở ĐÂY ---
+    # Logic Set Giờ (VẪN CHẠY)
     with lock:
-        if is_manual_mode:
-            print("[MANUAL TIME] Đang ở Manual Mode. Sẽ không set giờ.")
-            return jsonify({"status": "skipped", "reason": "manual mode"})
+        # Không cần check manual mode ở đây, vì cổng chặn nằm trong go_to_day/go_to_night
             
         if current_stage == "Idle_Empty":
             print(f"[MANUAL TIME] Bỏ qua, đang Idle.")
@@ -587,6 +563,7 @@ def set_manual_time():
         
         print(f"\n--- ⚙️ SET GIỜ THỦ CÔNG: {hour}:00 ---")
         
+        # Chỉ gọi go_to_day/go_to_night để ĐẶT LẠI LỊCH (Scheduler)
         if 0 <= hour < light_hours:
             go_to_day(start_hour=hour)
         else:
@@ -595,7 +572,7 @@ def set_manual_time():
     return jsonify({"status": "ok", "set_hour": hour}), 200
 
 # ==========================================================
-#  ENDPOINT MỚI: NHẬN LỆNH MANUAL MODE TỪ THINGSBOARD (LOGIC MỚI)
+#  ENDPOINT MỚI: NHẬN LỆNH MANUAL MODE TỪ THINGSBOARD (GIỮ NGUYÊN)
 # ==========================================================
 @app.route("/set_manual_mode", methods=["POST"])
 def set_manual_mode():
@@ -628,8 +605,8 @@ def set_manual_mode():
             if is_manual_mode:
                 # BẬT Manual: Không làm gì cả. 
                 # Các "cổng chặn" sẽ tự lo việc chặn auto.
-                # Đồng hồ vẫn chạy ngầm.
-                print("[MANUAL MODE] Đã bật. Đồng hồ vẫn chạy ngầm.")
+                # Đồng hồ và AI vẫn chạy ngầm.
+                print("[MANUAL MODE] Đã bật. Đồng hồ và AI vẫn chạy ngầm.")
             
             else:
                 # TẮT Manual (QUAY VỀ AUTO)
@@ -643,7 +620,7 @@ def set_manual_mode():
                     recipe = current_recipe
                     r, g, b = recipe["rgb_color"]
                     brightness = recipe["brightness"]
-                    send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b}) # Sửa key nếu cần
+                    send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b}) 
                     send_rpc("setBrightness", {"brightness": brightness})
                 elif current_day_state == "NIGHT":
                     print("[MANUAL MODE] Đồng bộ: Ban đêm -> Tắt đèn.")
