@@ -354,6 +354,8 @@ def roboflow_webhook():
 # ==========================================================
 @app.route("/process_data", methods=["POST"])
 def process_data():
+    global last_pump_state  # <--- SỬA: Khai báo global ngay tại đây
+
     data = request.json
     
     soil = data.get("soil")
@@ -404,7 +406,7 @@ def process_data():
 
     # ====== QUYẾT ĐỊNH BƠM ======
     if target == 0:
-        global last_pump_state
+        # global last_pump_state  <-- XÓA DÒNG NÀY
         desired_state = False
     
         if last_pump_state != desired_state:
@@ -416,7 +418,7 @@ def process_data():
     
         return jsonify({"status": "idle (pump off)"})
 
-    global last_pump_state
+    # global last_pump_state  <-- XÓA DÒNG NÀY (Đây chính là dòng 419 gây lỗi)
     
     desired_state = (soil_state == -1)  # True = ON, False = OFF
     
@@ -428,9 +430,6 @@ def process_data():
         print(f"[PUMP] State unchanged ({desired_state}) → no RPC sent")
     
     return jsonify({"status": "pump on" if desired_state else "pump off"})
-
-
-
 # ==========================================================
 #  API SET GIỜ THỦ CÔNG
 # ==========================================================
