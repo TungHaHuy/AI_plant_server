@@ -14,6 +14,7 @@ TB_API = "https://thingsboard.cloud"
 DEVICE_ID = "6cc4a260-bbeb-11f0-8f6e-0181075d8a82"
 DEVICE_TOKEN = "fNsd0L35ywAKakJ979b2"
 
+# JWT ADMIN TOKEN (LẤY TRONG DEVTOOLS)
 TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiIxNjg4NTExOC1hMGE3LTRmYzktOTcwNS1mMGJjM2NjMWQ3YmEiLCJleHAiOjE3NjI4NTQyODYsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYyODI1NDg2LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Ahr9rBZdkFQx7O98WS6WFMObMDxIw0NWfLC9cxUdph2eTphHajAe_6m34JjmaLSFoix3eNkDDgG1RViUmRYduw"
 
 last_pump_state = None
@@ -50,7 +51,6 @@ current_recipe = PLANT_RECIPES[current_stage]
 current_day_state = "IDLE"
 
 scheduler = BackgroundScheduler(daemon=True)
-
 app = Flask(__name__)
 
 try:
@@ -59,6 +59,61 @@ try:
     atexit.register(lambda: scheduler.shutdown())
 except Exception as e:
     print("Scheduler error:", e)
+
+
+# ==========================================================
+#  API: GET SERVER ATTRIBUTE 'mode'
+# ==========================================================
+def get_mode_from_server():
+    """
+    Đọc server attribute 'mode' trong SERVER_SCOPE
+    Trả về True / False / None nếu lỗi
+    """
+    url = f"{TB_API}/api/plugins/telemetry/DEVICE/{DEVICE_ID}/values/attributes/SERVER_SCOPE?keys=mode"
+    headers = {
+        "X-Authorization": f"Bearer {TB_JWT_TOKEN}"
+    }
+
+    try:
+        r = requests.get(url, headers=headers, timeout=3)
+        if r.status_code != 200:
+            print(f"[MODE API] ERROR {r.status_code}: {r.text}")
+            return None
+
+        data = r.json()
+        if "mode" not in data:
+            print("[MODE API] 'mode' not found in server attributes")
+            return None
+
+        value = data["mode"][0]["value"]
+        return bool(value)
+
+    except Exception as e:
+        print(f"[MODE API] EXCEPTION: {e}")
+        return None
+
+
+# ==========================================================
+#  BACKGROUND CHECK: AUTO SYNC MANUAL MODE
+# ==========================================================
+def background_manual_sync():
+    global is_manual_mode
+
+    mode = get_mode_from_server()
+
+    if mode is None:
+        return
+
+    if mode != is_manual_mode:
+        print("\n------------------------------")
+        print(f"🔄 SERVER MODE CHANGED → {mode}")
+        print("------------------------------")
+        is_manual_mode = mode
+
+
+scheduler.add_job(background_manual_sync, "interval", seconds=3, id="manual_sync")
+
+
 
 # ==========================================================
 #  RPC
@@ -78,6 +133,8 @@ def send_rpc(method, params):
         print(f"[RPC] {method} -> {r.status_code}")
     except Exception as e:
         print(f"[RPC ERROR] {e}")
+
+
 
 def send_attributes(payload):
     url = f"{TB_API}/api/v1/{DEVICE_TOKEN}/attributes"
@@ -149,6 +206,7 @@ def clear_all_jobs():
         pass
 
 
+
 # ==========================================================
 #  UPDATE STAGE
 # ==========================================================
@@ -171,12 +229,14 @@ def update_stage_internal(new_stage):
         go_to_day(start_hour=0)
 
 
+
 # ==========================================================
 #  HOME
 # ==========================================================
 @app.route("/")
 def home():
-    return f"AI Plant Server running — Stage {current_stage} ({current_day_state})"
+    return f"AI Plant Server running — Stage {current_stage} ({current_day_state}), manual={is_manual_mode}"
+
 
 
 # ==========================================================
@@ -203,10 +263,10 @@ def roboflow_webhook():
 
     print("[WEBHOOK] Stage:", new_stage)
 
-    # chạy async → webhook trả về ngay
     threading.Thread(target=update_stage_internal, args=(new_stage,)).start()
 
     return jsonify({"status":"queued","stage":new_stage}), 200
+
 
 
 # ==========================================================
@@ -244,7 +304,6 @@ def process_data():
         "temp_state": temp_state
     })
 
-    # MANUAL MODE BLOCK PUMP
     if is_manual_mode:
         print("[PUMP] Manual mode -> skip pump")
         return jsonify({"status": "manual"}), 200
@@ -261,44 +320,6 @@ def process_data():
     return jsonify({"status": "pump on" if desired else "pump off"}), 200
 
 
-# ==========================================================
-#  MANUAL MODE ENDPOINT
-# ==========================================================
-@app.route("/set_manual_mode", methods=["POST"])
-def set_manual_mode():
-    global is_manual_mode, last_pump_state
-
-    data = request.json
-    mode = data.get("current_mode")
-
-    if isinstance(mode, str):
-        mode = mode.lower() == "true"
-
-    # ---- LOG RÕ RÀNG ----
-    if mode:
-        print("\n==============================")
-        print("🔴 MANUAL MODE IS ON")
-        print("==============================")
-    else:
-        print("\n==============================")
-        print("🟢 MANUAL MODE IS OFF (BACK TO AUTO)")
-        print("==============================")
-
-    is_manual_mode = mode
-
-    if not is_manual_mode:
-        print("[MANUAL] Syncing device back to AUTO...")
-
-        if current_day_state == "DAY":
-            r, g, b = current_recipe["rgb_color"]
-            send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b})
-            send_rpc("setBrightness", {"brightness": current_recipe["brightness"]})
-        else:
-            send_rpc("setLedPower", {"state": False})
-
-        last_pump_state = None
-
-    return jsonify({"manual_mode": is_manual_mode}), 200
 
 # ==========================================================
 #  RUN
