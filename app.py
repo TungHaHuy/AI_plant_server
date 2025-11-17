@@ -274,11 +274,20 @@ def set_manual_mode():
     if isinstance(mode, str):
         mode = mode.lower() == "true"
 
-    print(f"\n=== MANUAL MODE: {mode} ===")
+    # ---- LOG RÕ RÀNG ----
+    if mode:
+        print("\n==============================")
+        print("🔴 MANUAL MODE IS ON")
+        print("==============================")
+    else:
+        print("\n==============================")
+        print("🟢 MANUAL MODE IS OFF (BACK TO AUTO)")
+        print("==============================")
+
     is_manual_mode = mode
 
     if not is_manual_mode:
-        print("[MANUAL] Returning to AUTO, syncing device...")
+        print("[MANUAL] Syncing device back to AUTO...")
 
         if current_day_state == "DAY":
             r, g, b = current_recipe["rgb_color"]
@@ -287,11 +296,9 @@ def set_manual_mode():
         else:
             send_rpc("setLedPower", {"state": False})
 
-        # pump sẽ tự cập nhật ở request tiếp theo
         last_pump_state = None
 
     return jsonify({"manual_mode": is_manual_mode}), 200
-
 
 # ==========================================================
 #  RUN
