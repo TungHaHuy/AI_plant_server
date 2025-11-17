@@ -20,7 +20,7 @@ TB_PASSWORD = "Hahoangquan123"
 
 # --- Biến để lưu token tự động ---
 g_tb_jwt_token = None
-g_tb_login_lock = threading.Lock() # Lock cho việc login
+g_tb_login_lock = threading.Lock() 
 
 last_pump_state = None
 is_manual_mode = False
@@ -40,9 +40,9 @@ current_stage = "Idle_Empty"
 current_recipe = PLANT_RECIPES[current_stage]
 current_day_state = "IDLE"
 
-lock = threading.RLock() # Dùng RLock
+lock = threading.RLock() 
 scheduler = BackgroundScheduler(daemon=True)
-app = Flask(__name__)
+app = Flask(__name__) # <-- GUNICORN TÌM CÁI NÀY
 
 try:
     scheduler.start()
@@ -55,22 +55,15 @@ except Exception as e:
 #  HÀM LOGIN TỰ ĐỘNG
 # ==========================================================
 def auto_login_and_get_jwt():
-    """
-    Tự động login vào ThingsBoard để lấy JWT.
-    """
     global g_tb_jwt_token, g_tb_login_lock
-
     with g_tb_login_lock:
         if g_tb_jwt_token:
             return g_tb_jwt_token
-
         print("\n[AUTH] Đang login để lấy JWT token mới...")
         url = f"{TB_API}/api/auth/login"
         payload = {"username": TB_USERNAME, "password": TB_PASSWORD}
-        
         try:
-            r = requests.post(url, json=payload, timeout=5)
-            
+            r = requests.post(url, json=payload, timeout=5) # 5 giây timeout
             if r.status_code == 200:
                 data = r.json()
                 g_tb_jwt_token = data.get("token")
@@ -84,40 +77,43 @@ def auto_login_and_get_jwt():
             return None
 
 def get_jwt():
-    """Hàm helper để lấy token, nếu chưa có sẽ tự động login."""
     if g_tb_jwt_token:
         return g_tb_jwt_token
     return auto_login_and_get_jwt()
 
 def invalidate_jwt():
-    """Hàm này được gọi khi gặp lỗi 401, buộc lần gọi sau phải login lại."""
     global g_tb_jwt_token
     print("[AUTH] Token đã hết hạn (401). Xóa token cũ.")
     g_tb_jwt_token = None
+
+# ==========================================================
+#  *** SỬA LỖI GUNICORN ***
+#  CHẠY LOGIN Ở GLOBAL SCOPE (TRONG THREAD)
+#  Gunicorn sẽ chạy cái này khi nó import "app:app"
+# ==========================================================
+if TB_USERNAME and TB_PASSWORD:
+    print("[GUNICORN FIX] Đang thực hiện login lần đầu (trong thread riêng)...")
+    threading.Thread(target=auto_login_and_get_jwt, daemon=True).start()
+# ==========================================================
 
 # ==========================================================
 #  API: GET SERVER ATTRIBUTE 'mode' (Đã sửa)
 # ==========================================================
 def get_mode_from_server():
     url = f"{TB_API}/api/plugins/telemetry/DEVICE/{DEVICE_ID}/values/attributes/SERVER_SCOPE?keys=mode"
-    
     token = get_jwt()
     if not token:
+        print("[MODE API] Lỗi: Không có token để get_mode")
         return None 
-
     headers = {"X-Authorization": f"Bearer {token}"}
-
     try:
         r = requests.get(url, headers=headers, timeout=3)
-        
         if r.status_code == 401:
-            invalidate_jwt() # Token hết hạn, xóa nó đi
+            invalidate_jwt() 
             return None
-
         if r.status_code != 200:
             print(f"[MODE API] ERROR {r.status_code}: {r.text}")
             return None
-
         data = r.json()
         if isinstance(data, list) and len(data) > 0:
             return bool(data[0].get("value"))
@@ -168,25 +164,23 @@ def send_rpc(method, params):
     if is_manual_mode:
         print(f"[MANUAL] Block RPC {method} {params}")
         return
-
     token = get_jwt()
     if not token:
+        print(f"[RPC] Lỗi: Không có token để send_rpc {method}")
         return 
-
     url = f"{TB_API}/api/plugins/rpc/oneway/{DEVICE_ID}"
     headers = {"X-Authorization": f"Bearer {token}"}
     payload = {"method": method, "params": params}
-
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=3)
         print(f"[RPC] {method} -> {r.status_code}")
         if r.status_code == 401:
-            invalidate_jwt() # Token hết hạn
+            invalidate_jwt()
     except Exception as e:
         print(f"[RPC ERROR] {e}")
 
 # ==========================================================
-#  SEND ATTRIBUTES (Không đổi, dùng DEVICE_TOKEN)
+#  SEND ATTRIBUTES (Không đổi)
 # ==========================================================
 def send_attributes(payload):
     url = f"{TB_API}/api/v1/{DEVICE_TOKEN}/attributes"
@@ -373,13 +367,10 @@ def set_manual_time():
     return jsonify({"status": "ok", "set_hour": hour, "stage": current_stage}), 200
 
 # ==========================================================
-#  RUN
+#  RUN (Khối này bây giờ CHỈ DÙNG KHI CHẠY LOCAL)
 # ==========================================================
 if __name__ == "__main__":
-    # Tự động login 1 lần ngay khi khởi động
-    if TB_USERNAME and TB_PASSWORD:
-        print("Đang thực hiện login lần đầu tiên khi khởi động...")
-        auto_login_and_get_jwt()
-    
+    # (Login đã được gọi ở trên, không cần gọi lại ở đây)
     port = int(os.environ.get("PORT", 5000))
+    print(f"Khởi động Flask server CỤC BỘ trên port {port}...")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
