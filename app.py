@@ -184,7 +184,7 @@ def go_to_day(start_hour=0):
     
     r, g, b = recipe["rgb_color"]
     brightness = recipe["brightness"]
-    send_rpc("setLedColor", {"r": r, "g": g, "b": b})
+    send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b})
     send_rpc("setBrightness", {"brightness": brightness})
 
     min_temp_d, max_temp_d = recipe["temp_day"]
