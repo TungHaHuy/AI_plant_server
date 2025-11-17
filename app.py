@@ -71,22 +71,36 @@ def get_mode_from_server():
 
     try:
         r = requests.get(url, headers=headers, timeout=3)
+
+        print("\n================ RAW MODE API ================")
+        print(r.status_code)
+        print(r.text)
+        print("=============================================\n")
+
         if r.status_code != 200:
             print(f"[MODE API] ERROR {r.status_code}: {r.text}")
             return None
 
+        # Parse JSON
         data = r.json()
 
-        # --- FIX TB CLOUD FORMAT ---#
+        # CASE 1 → TB CLOUD FORMAT: LIST
         if isinstance(data, list) and len(data) > 0:
             return bool(data[0].get("value"))
 
-        print("[MODE API] 'mode' not found in server attributes")
+        # CASE 2 → TB CE/PRO FORMAT: OBJECT {"mode":[{...}]}
+        if isinstance(data, dict) and "mode" in data:
+            arr = data.get("mode")
+            if isinstance(arr, list) and len(arr) > 0:
+                return bool(arr[0].get("value"))
+
+        print("[MODE API] CANNOT FIND 'mode' IN RESPONSE")
         return None
 
     except Exception as e:
         print(f"[MODE API] EXCEPTION: {e}")
         return None
+
 
 # ==========================================================
 #  BACKGROUND CHECK: AUTO SYNC MANUAL MODE
