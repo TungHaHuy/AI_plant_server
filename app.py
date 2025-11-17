@@ -13,6 +13,8 @@ TB_API = "https://thingsboard.cloud"
 
 DEVICE_ID = "6cc4a260-bbeb-11f0-8f6e-0181075d8a82"
 DEVICE_TOKEN = "fNsd0L35ywAKakJ979b2"
+CAMERA_DEVICE_ID = "2f3ed0d0-c3b8-11f0-a4c6-e5fe644790a2"
+
 
 # BẠN VẪN CẦN DÁN TOKEN MỚI VÀO ĐÂY KHI NÓ HẾT HẠN
 TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiJkMzFhMjg1OS0xMTUzLTRiZDQtODI0Yy04YmE2MDAyNjI0MjciLCJleHAiOjE3NjM0MzE5NTEsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYzNDAzMTUxLCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.HJQWoWFRzu1Rc4ZGJMF_F3VKGY3b_bZS6CW_IuHNumE34xJ8cvxMCQmEDFBcW_oR4oOoKtKZY8dh-tate2G9FQ"
@@ -63,6 +65,28 @@ try:
 except Exception as e:
     print("Scheduler error:", e)
 
+# ==========================================================
+# AUTO CAMERA CAPTURE (every 1 hour)
+# ==========================================================
+def trigger_camera_capture():
+    if is_manual_mode:
+        print("[AUTO CAM] Manual mode bật → không chụp ảnh.")
+        return
+
+    print("\n=== 📸 AUTO CAPTURE TRIGGER ===")
+    send_camera_rpc("takePicture", {})
+
+try:
+    scheduler.add_job(
+        trigger_camera_capture,
+        "interval",
+        hours=1,
+        id="auto_cam_job",
+        replace_existing=True
+    )
+    print("[AUTO CAM] Auto capture enabled (every 1H).")
+except Exception as e:
+    print("[AUTO CAM ERROR]", e)
 
 # ==========================================================
 #  HELPER: SYNC ĐỒNG HỒ (*** ĐÃ SỬA LỖI LOGIC ***)
@@ -157,6 +181,21 @@ def send_rpc(method, params):
     except Exception as e:
         print(f"[RPC ERROR] {e}")
 
+def send_camera_rpc(method, params):
+    global is_manual_mode
+    if is_manual_mode:
+        print(f"[CAMERA] Manual mode → Block RPC {method}")
+        return
+
+    url = f"{TB_API}/api/plugins/rpc/oneway/{CAMERA_DEVICE_ID}"
+    headers = {"X-Authorization": f"Bearer {TB_JWT_TOKEN}"}
+    payload = {"method": method, "params": params}
+
+    try:
+        r = requests.post(url, json=payload, headers=headers, timeout=5)
+        print(f"[CAMERA RPC] {method} -> {r.status_code}")
+    except Exception as e:
+        print(f"[CAMERA RPC ERROR] {e}")
 
 def send_attributes(payload):
     url = f"{TB_API}/api/v1/{DEVICE_TOKEN}/attributes"
@@ -396,6 +435,37 @@ def process_data():
         print(f"[PUMP] State unchanged ({desired}) -> no RPC sent")
 
     return jsonify({"status": "pump on" if desired else "pump off"}), 200
+
+@app.route("/upload_photo", methods=["POST"])
+def upload_photo():
+    data = request.json
+    b64 = data.get("photo")
+
+    if not b64:
+        return jsonify({"error": "Missing photo"}), 400
+
+    print("[PHOTO] Received photo from ESP32-CAM")
+
+    # Gửi lên Roboflow workflow
+    roboflow_url = "https://serverless.roboflow.com/tunghahuy/workflows/custom-workflow"
+
+    payload = {
+        "api_key": "YY5sAfysi1GpnWgkVPfF",
+        "inputs": {
+            "image": {
+                "type": "base64",
+                "value": b64
+            }
+        }
+    }
+
+    try:
+        r = requests.post(roboflow_url, json=payload)
+        print("[ROBOFLOW]", r.status_code, r.text)
+    except Exception as e:
+        print("[ROBOFLOW ERROR]", e)
+
+    return jsonify({"status": "ok"}), 200
 
 
 # ==========================================================
