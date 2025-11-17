@@ -15,9 +15,9 @@ DEVICE_ID = "6cc4a260-bbeb-11f0-8f6e-0181075d8a82"
 DEVICE_TOKEN = "fNsd0L35ywAKakJ979b2"
 
 # JWT ADMIN TOKEN (LẤY TRONG DEVTOOLS)
-TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiI1Zjc0MTAyNC01ZDIzLTRmZTEtYjczMi03NzM5MzhmNzFiOTEiLCJleHAiOjE3NjM0MDE3MjcsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYzMzcyOTI3LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Zm_9fX4lsKRWSvBVrnT5q2hNUQvx7rkZEvVt7zXUFzNFCeh413wUQbevKd7o3ntT48Z8F1AGkRPPA0knGin1kA"
+TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiI1Zjc0MTAyNC01ZDIzLTRmZTEtYjczMi03NzM5MzhmNzFiOTEiLCJleHAiOjE3NjM0MDE3MjcsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYzMzcyOTI3LCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.Zm_9fX4lsKRWSvBVrnT5q2hNUQvx7rkZEvVt7zXUFzNFCeh413wUQbevKd7o3ntT48Z8FAGkRPPA0knGin1kA"
 last_pump_state = None
-is_manual_mode = False   # <<<<<<<<<< MANUAL MODE FLAG
+is_manual_mode = False  # <<<<<<<<<< MANUAL MODE FLAG
 
 # ==========================================================
 #  RECIPES
@@ -49,6 +49,7 @@ current_stage = "Idle_Empty"
 current_recipe = PLANT_RECIPES[current_stage]
 current_day_state = "IDLE"
 
+lock = threading.Lock() # <<< ĐÃ THÊM LOCK
 scheduler = BackgroundScheduler(daemon=True)
 app = Flask(__name__)
 
@@ -71,12 +72,6 @@ def get_mode_from_server():
 
     try:
         r = requests.get(url, headers=headers, timeout=3)
-
-        print("\n================ RAW MODE API ================")
-        print(r.status_code)
-        print(r.text)
-        print("=============================================\n")
-
         if r.status_code != 200:
             print(f"[MODE API] ERROR {r.status_code}: {r.text}")
             return None
@@ -103,25 +98,62 @@ def get_mode_from_server():
 
 
 # ==========================================================
-#  BACKGROUND CHECK: AUTO SYNC MANUAL MODE
+#  BACKGROUND CHECK: AUTO SYNC MANUAL MODE (*** ĐÃ CẬP NHẬT ***)
 # ==========================================================
 def background_manual_sync():
     global is_manual_mode
 
-    mode = get_mode_from_server()
+    # 1. Lấy trạng thái 'mode' TỪ SERVER (True = Manual)
+    mode_from_server = get_mode_from_server()
+    if mode_from_server is None:
+        return # Lỗi API, bỏ qua lần này
 
-    if mode is None:
-        return
+    # 2. Lấy trạng thái 'mode' HIỆN TẠI (cache trong Python)
+    current_python_mode = is_manual_mode
 
-    if mode != is_manual_mode:
+    # 3. Chỉ xử lý nếu có thay đổi
+    if mode_from_server != current_python_mode:
+        
         print("\n------------------------------")
-        print(f"🔄 SERVER MODE CHANGED → {mode}")
+        print(f"🔄 CHẾ ĐỘ THAY ĐỔI: {mode_from_server}")
         print("------------------------------")
-        is_manual_mode = mode
+        
+        # 4. Cập nhật trạng thái mới
+        is_manual_mode = mode_from_server
+
+        # << YÊU CẦU 2: KHÔI PHỤC KHI TẮT MANUAL >>
+        # Kiểm tra xem đây có phải là lúc TẮT manual (chuyển từ True -> False)
+        if current_python_mode == True and mode_from_server == False:
+            
+            print("[SYNC] Đã tắt chế độ thủ công. Đang khôi phục đồng hồ...")
+            
+            # Cần lock để tránh xung đột với các hàm khác
+            with lock:
+                # Lấy giờ hiện tại (0-23)
+                current_hour = datetime.now().hour
+                
+                recipe = current_recipe
+                if current_stage == "Idle_Empty":
+                    print("[SYNC] Đang Idle, không cần khôi phục.")
+                    return
+
+                light_hours = recipe.get("light_hours", 12)
+                
+                # Xóa job cũ đi (rất quan trọng)
+                clear_all_jobs()
+
+                # Quyết định gọi Day hay Night dựa trên giờ hiện tại
+                if 0 <= current_hour < light_hours:
+                    print(f"[SYNC] Giờ {current_hour} là BAN NGÀY (light_hours={light_hours}). Gọi go_to_day().")
+                    # Gọi go_to_day với start_hour là giờ hiện tại
+                    go_to_day(start_hour=current_hour) 
+                else:
+                    print(f"[SYNC] Giờ {current_hour} là BAN ĐÊM (light_hours={light_hours}). Gọi go_to_night().")
+                    # Gọi go_to_night với start_hour là giờ hiện tại
+                    go_to_night(is_idle=False, start_hour=current_hour)
 
 
-scheduler.add_job(background_manual_sync, "interval", seconds=3, id="manual_sync")
-
+scheduler.add_job(background_manual_sync, "interval", seconds=3, id="manual_sync", replace_existing=True)
 
 
 # ==========================================================
@@ -144,7 +176,6 @@ def send_rpc(method, params):
         print(f"[RPC ERROR] {e}")
 
 
-
 def send_attributes(payload):
     url = f"{TB_API}/api/v1/{DEVICE_TOKEN}/attributes"
     try:
@@ -155,65 +186,96 @@ def send_attributes(payload):
 
 
 # ==========================================================
-#  DAY/NIGHT
+#  DAY/NIGHT (*** ĐÃ CẬP NHẬT ***)
 # ==========================================================
 def go_to_day(start_hour=0):
     global current_day_state
-    if current_stage == "Idle_Empty":
-        return
+    
+    # Lấy lock để đảm bảo không bị xung đột
+    with lock:
+        if current_stage == "Idle_Empty":
+            print("[CLOCK] Bỏ qua go_to_day() vì đang Idle.")
+            return
 
-    current_day_state = "DAY"
-    recipe = current_recipe
+        print(f"\n--- ☀️ PLANT DAYTIME (Start Hour: {start_hour}) ---")
+        current_day_state = "DAY"
+        recipe = current_recipe
 
-    r, g, b = recipe["rgb_color"]
-    send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b})
-    send_rpc("setBrightness", {"brightness": recipe["brightness"]})
+        # << YÊU CẦU 1: LUÔN BẬT NGUỒN ĐÈN KHI VÀO BAN NGÀY >>
+        print("[CLOCK] Đảm bảo nguồn LED Bật")
+        send_rpc("setLedPower", {"state": True}) 
+        # (Lưu ý: ESP32 có 200ms delay sau khi bật nguồn)
 
-    min_t, max_t = recipe["temp_day"]
-    min_h, max_h = recipe["humi_day"]
-    send_attributes({
-        "min_temp": min_t, "max_temp": max_t,
-        "min_humi": min_h, "max_humi": max_h,
-        "day_cycle": "DAY"
-    })
+        r, g, b = recipe["rgb_color"]
+        send_rpc("setLedColor", {"ledR": r, "ledG": g, "ledB": b})
+        send_rpc("setBrightness", {"brightness": recipe["brightness"]})
 
-    light_hours = recipe["light_hours"]
-    remaining = light_hours - start_hour
-    run_time = datetime.now() + timedelta(hours=max(remaining, 0.01))
-    scheduler.add_job(go_to_night, 'date', run_date=run_time, id='night_job')
+        min_t, max_t = recipe["temp_day"]
+        min_h, max_h = recipe["humi_day"]
+        send_attributes({
+            "min_temp": min_t, "max_temp": max_t,
+            "min_humi": min_h, "max_humi": max_h,
+            "day_cycle": "DAY"
+        })
+
+        light_hours = recipe.get("light_hours", 12)
+        remaining = light_hours - start_hour
+        # Đảm bảo remaining > 0 để tránh lỗi scheduler
+        run_time = datetime.now() + timedelta(hours=max(remaining, 0.01))
+
+        # Lên lịch cho ban đêm
+        try:
+            scheduler.add_job(go_to_night, 'date', run_date=run_time, id='night_job', replace_existing=True)
+            print(f"[CLOCK] Lên lịch TẮT ĐÈN sau {remaining:.1f} giờ")
+        except Exception as e:
+            print(f"[CLOCK ERROR] Lỗi add_job night: {e}")
 
 
 def go_to_night(is_idle=False, start_hour=None):
     global current_day_state
-    recipe = current_recipe
+    
+    with lock:
+        recipe = current_recipe
+        
+        if is_idle:
+            print(f"\n--- 💤 PLANT IDLE ---")
+            current_day_state = "IDLE"
+        else:
+            print(f"\n--- 🌙 PLANT NIGHTTIME (Start Hour: {start_hour}) ---")
+            current_day_state = "NIGHT"
 
-    current_day_state = "IDLE" if is_idle else "NIGHT"
+        send_rpc("setPump", {"state": False})
+        send_rpc("setLedPower", {"state": False}) # Tắt đèn
 
-    send_rpc("setPump", {"state": False})
-    send_rpc("setLedPower", {"state": False})
+        min_t, max_t = recipe["temp_night"]
+        min_h, max_h = recipe["humi_night"]
+        send_attributes({
+            "min_temp": min_t, "max_temp": max_t,
+            "min_humi": min_h, "max_humi": max_h,
+            "day_cycle": current_day_state
+        })
 
-    min_t, max_t = recipe["temp_night"]
-    min_h, max_h = recipe["humi_night"]
-    send_attributes({
-        "min_temp": min_t, "max_temp": max_t,
-        "min_humi": min_h, "max_humi": max_h,
-        "day_cycle": current_day_state
-    })
-
-    if not is_idle:
-        light_hours = recipe["light_hours"]
-        remaining = (24 - start_hour) if start_hour else (24 - light_hours)
-        run_time = datetime.now() + timedelta(hours=max(remaining, 0.01))
-        scheduler.add_job(go_to_day, 'date', run_date=run_time, id='day_job')
+        if not is_idle:
+            light_hours = recipe.get("light_hours", 12)
+            remaining = (24 - start_hour) if start_hour is not None else (24 - light_hours)
+            
+            run_time = datetime.now() + timedelta(hours=max(remaining, 0.01))
+            try:
+                scheduler.add_job(go_to_day, 'date', run_date=run_time, id='day_job', replace_existing=True)
+                print(f"[CLOCK] Lên lịch BẬT ĐÈN sau {remaining:.1f} giờ")
+            except Exception as e:
+                print(f"[CLOCK ERROR] Lỗi add_job day: {e}")
 
 
 def clear_all_jobs():
+    print("[CLOCK] Hủy tất cả lịch trình (day_job/night_job)...")
     try:
-        if scheduler.get_job("day_job"): scheduler.remove_job("day_job")
-        if scheduler.get_job("night_job"): scheduler.remove_job("night_job")
-    except:
-        pass
-
+        if scheduler.get_job("day_job"):
+            scheduler.remove_job("day_job")
+        if scheduler.get_job("night_job"):
+            scheduler.remove_job("night_job")
+    except Exception as e:
+        print(f"[CLOCK ERROR] Lỗi khi xóa job: {e}")
 
 
 # ==========================================================
@@ -222,21 +284,28 @@ def clear_all_jobs():
 def update_stage_internal(new_stage):
     global current_stage, current_recipe, last_pump_state
 
-    if new_stage not in PLANT_RECIPES:
-        return
+    # Cần lock để đảm bảo stage không thay đổi
+    # trong khi background_sync hoặc set_manual_time đang chạy
+    with lock:
+        if new_stage not in PLANT_RECIPES:
+            print(f"Lỗi: Không tìm thấy stage '{new_stage}'")
+            return
+        
+        if new_stage == current_stage:
+            print(f"[STAGE] Vẫn là {new_stage}, không thay đổi.")
+            return
 
-    print(f"[STAGE] {current_stage} -> {new_stage}")
-    current_stage = new_stage
-    current_recipe = PLANT_RECIPES[current_stage]
-    last_pump_state = None
+        print(f"[STAGE] {current_stage} -> {new_stage}")
+        current_stage = new_stage
+        current_recipe = PLANT_RECIPES[current_stage]
+        last_pump_state = None
 
-    clear_all_jobs()
+        clear_all_jobs()
 
-    if new_stage == "Idle_Empty":
-        go_to_night(is_idle=True)
-    else:
-        go_to_day(start_hour=0)
-
+        if new_stage == "Idle_Empty":
+            go_to_night(is_idle=True)
+        else:
+            go_to_day(start_hour=0) # Bắt đầu ngày mới từ giờ 0
 
 
 # ==========================================================
@@ -247,9 +316,8 @@ def home():
     return f"AI Plant Server running — Stage {current_stage} ({current_day_state}), manual={is_manual_mode}"
 
 
-
 # ==========================================================
-#  WEBHOOK (đồng bộ, nhẹ, không block)
+#  WEBHOOK (bất đồng bộ)
 # ==========================================================
 @app.route("/roboflow_webhook", methods=["POST"])
 def roboflow_webhook():
@@ -272,10 +340,10 @@ def roboflow_webhook():
 
     print("[WEBHOOK] Stage:", new_stage)
 
+    # Chạy trong luồng riêng để trả về 200 OK ngay lập tức
     threading.Thread(target=update_stage_internal, args=(new_stage,)).start()
 
     return jsonify({"status":"queued","stage":new_stage}), 200
-
 
 
 # ==========================================================
@@ -286,18 +354,26 @@ def process_data():
     global last_pump_state
 
     data = request.json
-    soil = float(data.get("soil"))
-    temp = float(data.get("temperature"))
-    humi = float(data.get("humidity"))
+    try:
+        soil = float(data.get("soil"))
+        temp = float(data.get("temperature"))
+        humi = float(data.get("humidity"))
+    except Exception as e:
+        print(f"[PROCESS DATA] Lỗi parse JSON: {e}")
+        return jsonify({"error": "Invalid data"}), 400
 
-    recipe = current_recipe
+    with lock:
+        # Lấy bản sao của recipe và day_state
+        # để tránh thay đổi giữa chừng
+        recipe = current_recipe
+        day_state = current_day_state
 
     print(f"\n--- Soil Check --- soil={soil}, temp={temp}, humi={humi}")
 
-    if current_day_state == "DAY":
+    if day_state == "DAY":
         min_h, max_h = recipe["humi_day"]
         min_t, max_t = recipe["temp_day"]
-    else:
+    else: # NIGHT hoặc IDLE
         min_h, max_h = recipe["humi_night"]
         min_t, max_t = recipe["temp_night"]
 
@@ -323,11 +399,58 @@ def process_data():
         desired = (soil_state == -1)
 
     if last_pump_state != desired:
+        print(f"[PUMP] State changed -> sending RPC: {desired}")
         send_rpc("setPump", {"state": desired})
         last_pump_state = desired
+    else:
+        print(f"[PUMP] State unchanged ({desired}) -> no RPC sent")
 
     return jsonify({"status": "pump on" if desired else "pump off"}), 200
 
+
+# ==========================================================
+#  API SET GIỜ (*** ĐÃ THÊM LẠI ***)
+# ==========================================================
+@app.route("/set_manual_time", methods=["POST"])
+def set_manual_time():
+    data = request.json
+    hour = data.get("hour") # Lấy giờ (0-23)
+    
+    if hour is None:
+        return jsonify({"error": "Missing 'hour'"}), 400
+    
+    try:
+        hour = int(hour)
+        if not (0 <= hour <= 23):
+                raise ValueError("Giờ phải từ 0-23")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+    print(f"\n--- ⚙️ SET GIỜ THỦ CÔNG: {hour}:00 ---")
+
+    with lock:
+        if current_stage == "Idle_Empty":
+            print(f"[MANUAL TIME] Bỏ qua, đang Idle.")
+            go_to_night(is_idle=True) # Vẫn chạy go_to_night để đảm bảo mọi thứ tắt
+            return jsonify({"status": "idle, setting night"}), 200
+        
+        if is_manual_mode:
+             print(f"[MANUAL TIME] Đang ở chế độ thủ công. Sẽ chạy, nhưng RPC (đèn) sẽ bị chặn.")
+             # Vẫn cho chạy để scheduler được set, nhưng RPC (bơm/đèn) sẽ bị chặn
+
+        # Xóa các job cũ
+        clear_all_jobs()
+        
+        recipe = current_recipe
+        light_hours = recipe.get("light_hours", 12)
+        
+        # Quyết định chạy Day hay Night
+        if 0 <= hour < light_hours:
+            go_to_day(start_hour=hour)
+        else:
+            go_to_night(is_idle=False, start_hour=hour)
+
+    return jsonify({"status": "ok", "set_hour": hour, "stage": current_stage}), 200
 
 
 # ==========================================================
