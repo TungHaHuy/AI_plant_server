@@ -14,11 +14,13 @@ TB_API = "https://thingsboard.cloud"
 DEVICE_ID = "6cc4a260-bbeb-11f0-8f6e-0181075d8a82"
 DEVICE_TOKEN = "fNsd0L35ywAKakJ979b2"
 
-# JWT ADMIN TOKEN (LẤY TRONG DEVTOOLS)
-# BẠN SẼ CẦN CẬP NHẬT CÁI NÀY KHI NÓ HẾT HẠN
+# BẠN VẪN CẦN DÁN TOKEN MỚI VÀO ĐÂY KHI NÓ HẾT HẠN
 TB_JWT_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0eXMyazNAZ21haWwuY29tIiwidXNlcklkIjoiYWU2NjQxODAtYmJlNC0xMWYwLTkxYWQtMDljYTUyZDJkZDkxIiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiJkMzFhMjg1OS0xMTUzLTRiZDQtODI0Yy04YmE2MDAyNjI0MjciLCJleHAiOjE3NjM0MzE5NTEsImlzcyI6InRoaW5nc2JvYXJkLmNsb3VkIiwiaWF0IjoxNzYzNDAzMTUxLCJmaXJzdE5hbWUiOiJUeXMiLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsImlzQmlsbGluZ1NlcnZpY2UiOmZhbHNlLCJwcml2YWN5UG9saWN5QWNjZXB0ZWQiOnRydWUsInRlcm1zT2ZVc2VBY2NlcHRlZCI6dHJ1ZSwidGVuYW50SWQiOiJhZTNjZTc5MC1iYmU0LTExZjAtOTFhZC0wOWNhNTJkMmRkOTEiLCJjdXN0b21lcklkIjoiMTM4MTQwMDAtMWRkMi0xMWIyLTgwODAtODA4MDgwODA4MDgwIn0.HJQWoWFRzu1Rc4ZGJMF_F3VKGY3b_bZS6CW_IuHNumE34xJ8cvxMCQmEDFBcW_oR4oOoKtKZY8dh-tate2G9FQ"
 last_pump_state = None
-is_manual_mode = False  # <<<<<<<<<< MANUAL MODE FLAG
+is_manual_mode = False
+
+# *** THÊM BIẾN MỚI ĐỂ LƯU GIỜ SINH HỌC ***
+g_cycle_start_time = None 
 
 # ==========================================================
 #  RECIPES
@@ -50,7 +52,7 @@ current_stage = "Idle_Empty"
 current_recipe = PLANT_RECIPES[current_stage]
 current_day_state = "IDLE"
 
-lock = threading.RLock() # <<< DÙNG RLock
+lock = threading.RLock() 
 scheduler = BackgroundScheduler(daemon=True)
 app = Flask(__name__)
 
@@ -63,63 +65,62 @@ except Exception as e:
 
 
 # ==========================================================
-#  API: GET MODE (*** ĐÃ BỊ XÓA ***)
-# ==========================================================
-# def get_mode_from_server(): ... (ĐÃ XÓA)
-
-
-# ==========================================================
-#  BACKGROUND CHECK (*** ĐÃ BỊ XÓA ***)
-# ==========================================================
-# def background_manual_sync(): ... (ĐÃ XÓA)
-
-# scheduler.add_job(background_manual_sync, ...) (ĐÃ XÓA)
-
-
-# ==========================================================
-#  HELPER: SYNC ĐỒNG HỒ KHI TẮT MANUAL (*** HÀM MỚI ***)
+#  HELPER: SYNC ĐỒNG HỒ (*** ĐÃ SỬA LỖI LOGIC ***)
 # ==========================================================
 def sync_clock_state():
-    """Hàm này khôi phục lại trạng thái Day/Night sau khi tắt manual"""
+    """Hàm này khôi phục lại trạng thái Day/Night DỰA TRÊN GIỜ SINH HỌC"""
+    global g_cycle_start_time
     print("[SYNC] Đã tắt chế độ thủ công. Đang khôi phục đồng hồ...")
-    # Dùng lock để đảm bảo an toàn luồng
+    
     with lock: 
-        current_hour = datetime.now().hour
         recipe = current_recipe
         if current_stage == "Idle_Empty":
             print("[SYNC] Đang Idle, không cần khôi phục.")
             return
 
+        if g_cycle_start_time is None:
+            # Server vừa khởi động, không biết giờ bắt đầu.
+            # Cứ bắt đầu một chu kỳ mới (Hour 0) ngay bây giờ.
+            print("[SYNC] Không tìm thấy giờ bắt đầu (g_cycle_start_time is None). Bắt đầu chu kỳ mới (Hour 0).")
+            go_to_day(start_hour=0) # Sẽ tự động set g_cycle_start_time
+            return
+
+        # --- LOGIC TƯƠNG ĐỐI (ĐÃ SỬA) ---
+        # Tính số giờ đã trôi qua KỂ TỪ LÚC BẮT ĐẦU CHU KỲ (Hour 0)
+        elapsed_seconds = (datetime.now() - g_cycle_start_time).total_seconds()
+        elapsed_hours = elapsed_seconds / 3600
+        
+        # Tính giờ "sinh học" hiện tại trong ngày (modulo 24)
+        current_bio_hour = elapsed_hours % 24
+        
         light_hours = recipe.get("light_hours", 12)
         
         clear_all_jobs() # Xóa job cũ đi
 
-        if 0 <= current_hour < light_hours:
-            print(f"[SYNC] Giờ {current_hour} là BAN NGÀY. Gọi go_to_day().")
-            go_to_day(start_hour=current_hour) 
+        if 0 <= current_bio_hour < light_hours:
+            # Vẫn đang trong giờ ban ngày
+            print(f"[SYNC] Giờ sinh học {current_bio_hour:.1f} (trong {light_hours}h) là BAN NGÀY. Gọi go_to_day().")
+            go_to_day(start_hour=current_bio_hour) 
         else:
-            print(f"[SYNC] Giờ {current_hour} là BAN ĐÊM. Gọi go_to_night().")
-            go_to_night(is_idle=False, start_hour=current_hour)
+            # Đã qua giờ ban ngày
+            print(f"[SYNC] Giờ sinh học {current_bio_hour:.1f} (trong {light_hours}h) là BAN ĐÊM. Gọi go_to_night().")
+            go_to_night(is_idle=False, start_hour=current_bio_hour)
 
 # ==========================================================
-#  API: SET MANUAL MODE (*** HÀM ĐÃ SỬA LỖI BOOL("false") ***)
+#  API: SET MANUAL MODE (*** ĐÃ SỬA LỖI BOOL("false") ***)
 # ==========================================================
 @app.route("/set_manual_mode", methods=["POST"])
 def set_manual_mode_api():
     global is_manual_mode
     data = request.json
     
-    # Dữ liệu 100% là string "true" hoặc string "false"
-    # (Dựa trên log của bạn, không phải giao diện)
-    
     # Lấy param, đổi nó sang string, và viết thường
-    new_mode_str = str(data.get("params")).lower() # Chuyển "False" -> "false"
+    new_mode_str = str(data.get("params")).lower()
 
     if new_mode_str not in ["true", "false"]:
         print(f"[MODE API] Lỗi: 'params' không phải 'true'/'false', mà là: {new_mode_str}")
         return jsonify({"error": "Invalid params"}), 400
 
-    # *** DÒNG SỬA LỖI LÀ ĐÂY ***
     # So sánh string "true" thay vì ép kiểu bool()
     new_mode_bool = (new_mode_str == "true") 
     
@@ -128,7 +129,7 @@ def set_manual_mode_api():
         print(f"\n--- ⚙️ MODE SET VIA API: {new_mode_bool} ---")
         is_manual_mode = new_mode_bool
         
-        # Nếu vừa TẮT manual (chuyển sang False)
+        # Nếu vừa TẮT manual (chuyển sang False), ta cần khôi phục đồng hồ
         if is_manual_mode == False:
             threading.Thread(target=sync_clock_state, daemon=True).start()
 
@@ -167,18 +168,26 @@ def send_attributes(payload):
 
 
 # ==========================================================
-#  DAY/NIGHT
+#  DAY/NIGHT (*** ĐÃ SỬA ĐỂ LƯU GIỜ ***)
 # ==========================================================
 def go_to_day(start_hour=0):
-    global current_day_state
+    global current_day_state, g_cycle_start_time
     
-    # Lấy lock để đảm bảo không bị xung đột
     with lock:
         if current_stage == "Idle_Empty":
             print("[CLOCK] Bỏ qua go_to_day() vì đang Idle.")
             return
 
-        print(f"\n--- ☀️ PLANT DAYTIME (Start Hour: {start_hour}) ---")
+        # *** ĐÂY LÀ HÀM LƯU GIỜ ***
+        # Nếu đây là một chu kỳ MỚI (start_hour=0)
+        # HOẶC chúng ta chưa bao giờ lưu giờ (lần chạy đầu)
+        if start_hour == 0 or g_cycle_start_time is None:
+            # Trừ đi start_hour (nếu có) để tìm "Hour 0"
+            g_cycle_start_time = datetime.now() - timedelta(hours=start_hour)
+            print(f"[CLOCK] ĐÃ LƯU GIỜ BẮT ĐẦU CHU KỲ (Hour 0) = {g_cycle_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        # -------------------------
+
+        print(f"\n--- ☀️ PLANT DAYTIME (Start Hour: {start_hour:.1f}) ---")
         current_day_state = "DAY"
         recipe = current_recipe
 
@@ -198,7 +207,7 @@ def go_to_day(start_hour=0):
         })
 
         light_hours = recipe.get("light_hours", 12)
-        remaining = light_hours - start_hour
+        remaining = light_hours - start_hour # Giờ còn lại của ban ngày
         run_time = datetime.now() + timedelta(hours=max(remaining, 0.01))
 
         try:
@@ -218,7 +227,7 @@ def go_to_night(is_idle=False, start_hour=None):
             print(f"\n--- 💤 PLANT IDLE ---")
             current_day_state = "IDLE"
         else:
-            print(f"\n--- 🌙 PLANT NIGHTTIME (Start Hour: {start_hour}) ---")
+            print(f"\n--- 🌙 PLANT NIGHTTIME (Start Hour: {start_hour:.1f}) ---")
             current_day_state = "NIGHT"
 
         send_rpc("setPump", {"state": False})
@@ -234,12 +243,18 @@ def go_to_night(is_idle=False, start_hour=None):
 
         if not is_idle:
             light_hours = recipe.get("light_hours", 12)
-            remaining = (24 - start_hour) if start_hour is not None else (24 - light_hours)
+            
+            # start_hour bây giờ là "giờ sinh học" (ví dụ: 19.0)
+            # Tổng giờ là 24.
+            # Giờ còn lại của ban đêm là 24.0 - 19.0 = 5.0 giờ
+            remaining = 24.0 - start_hour
             
             run_time = datetime.now() + timedelta(hours=max(remaining, 0.01))
             try:
-                scheduler.add_job(go_to_day, 'date', run_date=run_time, id='day_job', replace_existing=True)
-                print(f"[CLOCK] Lên lịch BẬT ĐÈN sau {remaining:.1f} giờ")
+                # Lần tới sẽ gọi go_to_day(start_hour=0)
+                # Nhưng chúng ta phải dùng lambda để nó không bị gọi ngay
+                scheduler.add_job(lambda: go_to_day(start_hour=0), 'date', run_date=run_time, id='day_job', replace_existing=True)
+                print(f"[CLOCK] Lên lịch BẬT ĐÈN (Chu kỳ mới) sau {remaining:.1f} giờ")
             except Exception as e:
                 print(f"[CLOCK ERROR] Lỗi add_job day: {e}")
 
@@ -260,7 +275,7 @@ def clear_all_jobs():
 # ==========================================================
 def update_stage_internal(new_stage):
     global current_stage, current_recipe, last_pump_state
-
+    
     with lock:
         if new_stage not in PLANT_RECIPES:
             print(f"Lỗi: Không tìm thấy stage '{new_stage}'")
@@ -280,7 +295,9 @@ def update_stage_internal(new_stage):
         if new_stage == "Idle_Empty":
             go_to_night(is_idle=True)
         else:
-            go_to_day(start_hour=0) # Bắt đầu ngày mới từ giờ 0
+            # Đây là một GIAI ĐOẠN MỚI
+            # Bắt đầu "0 giờ sinh học" MỚI ngay bây giờ
+            go_to_day(start_hour=0) 
 
 
 # ==========================================================
@@ -399,7 +416,7 @@ def set_manual_time():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
-    print(f"\n--- ⚙️ SET GIỜ THỦ CÔNG: {hour}:00 ---")
+    print(f"\n--- ⚙️ SET GIỜ THỦ CÔNG (TUA ĐỒNG HỒ): {hour}:00 ---")
 
     with lock:
         if current_stage == "Idle_Empty":
@@ -415,9 +432,16 @@ def set_manual_time():
         recipe = current_recipe
         light_hours = recipe.get("light_hours", 12)
         
+        # API này là "tua" đồng hồ sinh học
+        # Nó sẽ set 'g_cycle_start_time' về 'hour' tiếng trước
+        
         if 0 <= hour < light_hours:
-            go_to_day(start_hour=hour)
+            # Ví dụ: Tua đến giờ 5 (ban ngày)
+            # Giờ bắt đầu (Hour 0) là 5 tiếng trước
+            go_to_day(start_hour=hour) 
         else:
+            # Ví dụ: Tua đến giờ 19 (ban đêm)
+            # Giờ bắt đầu (Hour 0) là 19 tiếng trước
             go_to_night(is_idle=False, start_hour=hour)
 
     return jsonify({"status": "ok", "set_hour": hour, "stage": current_stage}), 200
