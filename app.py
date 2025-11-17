@@ -64,10 +64,6 @@ except Exception as e:
 #  API: GET SERVER ATTRIBUTE 'mode'
 # ==========================================================
 def get_mode_from_server():
-    """
-    Đọc server attribute 'mode' trong SERVER_SCOPE
-    Trả về True / False / None nếu lỗi
-    """
     url = f"{TB_API}/api/plugins/telemetry/DEVICE/{DEVICE_ID}/values/attributes/SERVER_SCOPE?keys=mode"
     headers = {
         "X-Authorization": f"Bearer {TB_JWT_TOKEN}"
@@ -80,17 +76,17 @@ def get_mode_from_server():
             return None
 
         data = r.json()
-        if "mode" not in data:
-            print("[MODE API] 'mode' not found in server attributes")
-            return None
 
-        value = data["mode"][0]["value"]
-        return bool(value)
+        # --- FIX TB CLOUD FORMAT ---#
+        if isinstance(data, list) and len(data) > 0:
+            return bool(data[0].get("value"))
+
+        print("[MODE API] 'mode' not found in server attributes")
+        return None
 
     except Exception as e:
         print(f"[MODE API] EXCEPTION: {e}")
         return None
-
 
 # ==========================================================
 #  BACKGROUND CHECK: AUTO SYNC MANUAL MODE
